@@ -1,0 +1,161 @@
+version: '3.8'
+
+networks:
+  ai_personal_assistant_net:
+    driver: bridge
+
+volumes:
+  supabase_data:
+  qdrant_data:
+  n8n_data:
+  mailhog_data:
+  grafana_data:
+  prometheus_data:
+
+services:
+  # Supabase Postgres Database
+  supabase-db:
+    image: supabase/postgres:15.1.0.117
+    container_name: jarvis-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-54322}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+      - ./langfuse/init.sql:/docker-entrypoint-initdb.d/01-langfuse-schema.sql
+    networks:
+      - ai_personal_assistant_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: jarvis-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"  # gRPC port
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - ai_personal_assistant_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: jarvis-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=development
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=America/New_York
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - ai_personal_assistant_net
+
+  # MailHog - Email Testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: jarvis-mailhog
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"  # SMTP
+      - "${MAILHOG_UI_PORT:-8025}:8025"    # Web UI
+    volumes:
+      - mailhog_data:/data
+    networks:
+      - ai_personal_assistant_net
+
+  # Adminer - Database Management UI
+  adminer:
+    image: adminer:latest
+    container_name: jarvis-adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: supabase-db
+    networks:
+      - ai_personal_assistant_net
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: jarvis-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - ai_personal_assistant_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: jarvis-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - ai_personal_assistant_net
+    depends_on:
+      - prometheus
+
+  # Langfuse - LLM Observability
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: jarvis-langfuse
+    restart: unless-stopped
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+    environment:
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL}
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_ENCRYPTION_KEY}
+      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+    networks:
+      - ai_personal_assistant_net
+    depends_on:
+      supabase-db:
+        condition: service_healthy

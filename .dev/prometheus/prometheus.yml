@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'jarvis-ai-assistant'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # .NET Microservices (running on host machine)
+  - job_name: 'dotnet-services'
+    static_configs:
+      - targets:
+          - 'host.docker.internal:5000'  # EventService
+          - 'host.docker.internal:5001'  # MemoryService
+          - 'host.docker.internal:5002'  # ReminderService
+          - 'host.docker.internal:5003'  # PatternService
+          - 'host.docker.internal:5004'  # TaskService
+          - 'host.docker.internal:5005'  # ContextService
+          - 'host.docker.internal:5006'  # RuleEngineService
+          - 'host.docker.internal:5007'  # AgentService
+        labels:
+          group: 'microservices'
+    metrics_path: '/metrics'
+
+  # Qdrant Vector Database
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['qdrant:6333']
+    metrics_path: '/metrics'
+
+  # n8n Workflow Engine
+  - job_name: 'n8n'
+    static_configs:
+      - targets: ['n8n:5678']
+    metrics_path: '/metrics'
