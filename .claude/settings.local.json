@@ -53,7 +53,8 @@
       "Bash(npm test:*)",
       "Bash(yarn install:*)",
       "Bash(yarn run:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(gh issue create:*)"
     ]
   }
 }
