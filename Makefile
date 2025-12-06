@@ -1,4 +1,7 @@
-.PHONY: infra-up infra-down infra-logs infra-reset infra-status build clean test run-event run-memory run-reminder run-pattern run-task run-context run-rule run-agent restore
+.PHONY: infra-up infra-down infra-logs infra-reset infra-status build clean test run-event run-memory run-reminder run-pattern run-task run-context run-rule run-agent restore migrate
+
+# Database connection
+DB_URL := postgresql://postgres:postgres@localhost:54322/appdb
 
 # Infrastructure commands
 infra-up:
@@ -57,3 +60,12 @@ run-rule:
 
 run-agent:
 	dotnet run --project src/AgentService
+
+# Database migrations
+migrate:
+	@echo "Running database migrations..."
+	@for f in $$(ls migrations/*.sql | sort); do \
+		echo "Applying $$f..."; \
+		psql "$(DB_URL)" -f $$f; \
+	done
+	@echo "Migrations complete."
